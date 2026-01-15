@@ -71,6 +71,7 @@ runs:
         gnr app dockerize  -n ${{ inputs.image_name }} ${{ inputs.instance_name }}
 
     - name: Tag and push
+      shell: bash
       run: |
         IMAGE=${{ inputs.registry }}/${{ github.repository }}:latest
         docker push "$IMAGE"
