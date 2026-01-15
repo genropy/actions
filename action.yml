@@ -68,7 +68,12 @@ runs:
         git config --global http.https://github.com/.extraheader \
         "AUTHORIZATION: basic $(printf "x-access-token:%s" "$ORG_CLONE_TOKEN" | base64 -w0)"
 
-        gnr app dockerize -p -n ${{ inputs.image_name }} ${{ inputs.instance_name }}
+        gnr app dockerize  -n ${{ inputs.image_name }} ${{ inputs.instance_name }}
+
+    - name: Tag and push
+      run: |
+        IMAGE=${{ inputs.registry }}/${{ github.repository }}:latest
+        docker push "$IMAGE"
 
 branding:
   icon: 'package'
