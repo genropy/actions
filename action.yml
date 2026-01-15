@@ -38,7 +38,7 @@ runs:
     - name: Install genropy
       shell: bash
       run: |
-        pip install git+https://github.com/genropy/genropy.git@develop
+        pip install git+https://github.com/genropy/genropy.git@develop#subdirectory=gnrpy
         gnr app initgenropy
         gnr core bagedit /home/runner/.gnr/environment.xml add projects.build path=/home/runner/work/${{ github.event.repository.name }}
 
