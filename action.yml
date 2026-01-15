@@ -45,7 +45,7 @@ runs:
     - name: Log in to Container Registry
       shell: bash
       run: |
-        echo "${{ inputs.github_token }}" | docker login ${{ inputs.registry }} \
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ inputs.registry }} \
         -u "${{ github.actor }}" --password-stdin
 
     - name: Configure git auth header and run builder
