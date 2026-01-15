@@ -54,6 +54,7 @@ runs:
         ORG_CLONE_TOKEN: ${{ inputs.org_clone_token }}
       run: |
         set -euo pipefail
+        export GNR_LOGLEVEL=debug
         export GIT_TERMINAL_PROMPT=0
         export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig_with_pat"
 
