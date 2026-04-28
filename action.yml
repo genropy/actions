@@ -23,6 +23,14 @@ inputs:
   github_token:
     description: 'GitHub token for registry authentication'
     required: true
+  deployer_urls:
+    description: 'Comma-separated URLs to notify after build (GENROPY_DEPLOYER_URLS)'
+    required: false
+    default: ''
+  deployer_token:
+    description: 'Token for deployer authentication (GENROPY_DEPLOYER_TOKEN)'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -73,8 +81,8 @@ runs:
     - name: Notify Genropy deployers
       shell: bash
       env:
-        DEPLOYER_URLS: ${{ vars.GENROPY_DEPLOYER_URLS }}
-        DEPLOYER_TOKEN: ${{ vars.GENROPY_DEPLOYER_TOKEN }}
+        DEPLOYER_URLS: ${{ inputs.deployer_urls }}
+        DEPLOYER_TOKEN: ${{ inputs.deployer_token }}
       run: |
         if [ -z "${DEPLOYER_URLS:-}" ]; then
           echo "GENROPY_DEPLOYER_URLS not set, skipping deployer notification"
