@@ -70,21 +70,24 @@ runs:
 
         gnr app dockerize --bleeding -p -n ${{ inputs.image_name }} ${{ inputs.instance_name }}
 
-    - name: Notify Softwell deployers
+    - name: Notify Genropy deployers
       shell: bash
+      env:
+        DEPLOYER_URLS: ${{ vars.GENROPY_DEPLOYER_URLS }}
+        DEPLOYER_TOKEN: ${{ vars.GENROPY_DEPLOYER_TOKEN }}
       run: |
-        if [ -z "${GENROPY_DEPLOYER_URLS:-}" ]; then
+        if [ -z "${DEPLOYER_URLS:-}" ]; then
           echo "GENROPY_DEPLOYER_URLS not set, skipping deployer notification"
           exit 0
         fi
         IMAGE="ghcr.io/${{ github.repository_owner }}/${{ inputs.image_name }}:latest"
-        IFS=',' read -ra URLS <<< "$GENROPY_DEPLOYER_URLS"
+        IFS=',' read -ra URLS <<< "$DEPLOYER_URLS"
         for URL in "${URLS[@]}"; do
           URL="$(echo "$URL" | xargs)"
           echo "Notifying deployer at $URL with image $IMAGE"
           curl -fsSL -X POST "$URL" \
             -H "Content-Type: application/json" \
-            --data "$(jq -n --arg token "$GENROPY_DEPLOYER_TOKEN" --arg image "$IMAGE" '{token: $token, image: $image}')"
+            --data "$(jq -n --arg token "$DEPLOYER_TOKEN" --arg image "$IMAGE" '{token: $token, image: $image}')"
         done
 
 branding:
