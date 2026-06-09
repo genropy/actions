@@ -39,7 +39,7 @@ runs:
       shell: bash
       run: |
         pip install git+https://github.com/genropy/genropy.git@develop#subdirectory=gnrpy
-        gnr app initgenropy
+        gnr app initgenropy --skip-existing
         gnr core bagedit /home/runner/.gnr/environment.xml add projects.build path=/home/runner/work/${{ github.event.repository.name }}
 
     - name: Log in to Container Registry
