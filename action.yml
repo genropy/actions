@@ -23,6 +23,14 @@ inputs:
   github_token:
     description: 'GitHub token for registry authentication'
     required: true
+  deployer_urls:
+    description: 'Comma-separated URLs to notify after build (GENROPY_DEPLOYER_URLS)'
+    required: false
+    default: ''
+  deployer_token:
+    description: 'Token for deployer authentication (GENROPY_DEPLOYER_TOKEN)'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -69,6 +77,26 @@ runs:
         "AUTHORIZATION: basic $(printf "x-access-token:%s" "$ORG_CLONE_TOKEN" | base64 -w0)"
 
         gnr app dockerize --bleeding -p -n ${{ inputs.image_name }} ${{ inputs.instance_name }}
+
+    - name: Notify Genropy deployers
+      shell: bash
+      env:
+        DEPLOYER_URLS: ${{ inputs.deployer_urls }}
+        DEPLOYER_TOKEN: ${{ inputs.deployer_token }}
+      run: |
+        if [ -z "${DEPLOYER_URLS:-}" ]; then
+          echo "GENROPY_DEPLOYER_URLS not set, skipping deployer notification"
+          exit 0
+        fi
+        IMAGE="ghcr.io/${{ github.repository_owner }}/${{ inputs.image_name }}:latest"
+        IFS=',' read -ra URLS <<< "$DEPLOYER_URLS"
+        for URL in "${URLS[@]}"; do
+          URL="$(echo "$URL" | xargs)"
+          echo "Notifying deployer at $URL with image $IMAGE"
+          curl -fsSL -X POST "$URL" \
+            -H "Content-Type: application/json" \
+            --data "$(jq -n --arg token "$DEPLOYER_TOKEN" --arg image "$IMAGE" '{token: $token, image: $image}')"
+        done
 
 branding:
   icon: 'package'
