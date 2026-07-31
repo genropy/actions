@@ -17,6 +17,10 @@ inputs:
     description: 'Python version to use'
     required: false
     default: '3.11'
+  subfolder:
+    description: "Repository subfolder for projects"
+    required: false
+    default: ''
   org_clone_token:
     description: 'Token for cloning private repositories'
     required: true
@@ -45,10 +49,13 @@ runs:
 
     - name: Install genropy
       shell: bash
+      env:
+        BUILD_SUBFOLDER: ${{ inputs.subfolder }}
+      
       run: |
         pip install git+https://github.com/genropy/genropy.git@develop#subdirectory=gnrpy
         gnr app initgenropy --skip-existing
-        gnr core bagedit /home/runner/.gnr/environment.xml add projects.build path=/home/runner/work/${{ github.event.repository.name }}
+        gnr core bagedit /home/runner/.gnr/environment.xml add projects.build path=/home/runner/work/${{ github.event.repository.name }}$BUILD_SUBFOLDER
 
     - name: Log in to Container Registry
       shell: bash
