@@ -95,8 +95,8 @@ runs:
         DEPLOYER_TOKEN: ${{ inputs.deployer_token }}
       run: |
         if [ -z "${DEPLOYER_URLS:-}" ]; then
-        echo "GENROPY_DEPLOYER_URLS not set, skipping deployer notification"
-        exit 0
+          echo "GENROPY_DEPLOYER_URLS not set, skipping deployer notification"
+          exit 0
         fi
         IMAGE="ghcr.io/${{ github.repository_owner }}/${{ inputs.image_name }}:latest"
         IFS=',' read -ra URLS <<< "$DEPLOYER_URLS"
