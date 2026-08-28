@@ -35,6 +35,10 @@ inputs:
     description: 'Token for deployer authentication (GENROPY_DEPLOYER_TOKEN)'
     required: false
     default: ''
+  image_tag:
+    description: 'Override the computed image tag (takes precedence over branch-based tag logic)'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -63,6 +67,21 @@ runs:
         echo "${{ inputs.github_token }}" | docker login ${{ inputs.registry }} \
         -u "${{ github.actor }}" --password-stdin
 
+    - name: Compute image tag
+      shell: bash
+      run: |
+        if [[ -n "${{ inputs.image_tag }}" ]]; then
+          TAG="${{ inputs.image_tag }}"
+        else
+          BRANCH="${{ github.ref_name }}"
+          if [[ "$BRANCH" == "main" || "$BRANCH" == "master" || "$BRANCH" == "develop" ]]; then
+            TAG="latest"
+          else
+            TAG="${BRANCH//\//-}"
+          fi
+        fi
+        echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
+
     - name: Configure git auth header and run builder
       shell: bash
       env:
@@ -83,7 +102,7 @@ runs:
         git config --global http.https://github.com/.extraheader \
         "AUTHORIZATION: basic $(printf "x-access-token:%s" "$ORG_CLONE_TOKEN" | base64 -w0)"
 
-        gnr app dockerize --bleeding -p -n ${{ inputs.image_name }} ${{ inputs.instance_name }}
+        gnr app dockerize --bleeding -p -n ${{ inputs.image_name }} -t $IMAGE_TAG ${{ inputs.instance_name }}
 
     - name: Notify Genropy deployers
       shell: bash
@@ -95,7 +114,7 @@ runs:
           echo "GENROPY_DEPLOYER_URLS not set, skipping deployer notification"
           exit 0
         fi
-        IMAGE="ghcr.io/${{ github.repository_owner }}/${{ inputs.image_name }}:latest"
+        IMAGE="ghcr.io/${{ github.repository_owner }}/${{ inputs.image_name }}:$IMAGE_TAG"
         IFS=',' read -ra URLS <<< "$DEPLOYER_URLS"
         for URL in "${URLS[@]}"; do
           URL="$(echo "$URL" | xargs)"
