@@ -23,7 +23,8 @@ inputs:
     default: ''
   org_clone_token:
     description: 'Token for cloning private repositories'
-    required: true
+    required: false
+    default: ''
   github_token:
     description: 'GitHub token for registry authentication'
     required: true
@@ -97,12 +98,12 @@ runs:
           insteadOf = git@github.com:
           insteadOf = ssh://git@github.com/
         EOF
-
-        git config --global --unset-all http.https://github.com/.extraheader || true
-        git config --global http.https://github.com/.extraheader \
-        "AUTHORIZATION: basic $(printf "x-access-token:%s" "$ORG_CLONE_TOKEN" | base64 -w0)"
-
-        gnr app dockerize --bleeding -p -n ${{ inputs.image_name }} -t $IMAGE_TAG ${{ inputs.instance_name }}
+        if [ -n "${ORG_CLONE_TOKEN:-}" ]; then
+          git config --global --unset-all http.https://github.com/.extraheader || true
+          git config --global http.https://github.com/.extraheader \
+          "AUTHORIZATION: basic $(printf "x-access-token:%s" "$ORG_CLONE_TOKEN" | base64 -w0)"
+        fi
+        gnr app dockerize --bleeding -p -n ${{ inputs.image_name }} -u ${{ github.repository_owner}} -t $IMAGE_TAG ${{ inputs.instance_name }}
 
     - name: Notify Genropy deployers
       shell: bash
