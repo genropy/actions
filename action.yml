@@ -103,7 +103,7 @@ runs:
           git config --global http.https://github.com/.extraheader \
           "AUTHORIZATION: basic $(printf "x-access-token:%s" "$ORG_CLONE_TOKEN" | base64 -w0)"
         fi
-        gnr app dockerize --bleeding -p -n ${{ inputs.image_name }} -u ${{ github.repository_owner}} -t $IMAGE_TAG ${{ inputs.instance_name }}
+        gnr app dockerize --bleeding -p -r ${{ input.registry }} -n ${{ inputs.image_name }} -u ${{ github.repository_owner}} -t $IMAGE_TAG ${{ inputs.instance_name }}
 
     - name: Notify Genropy deployers
       shell: bash
