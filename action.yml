@@ -56,12 +56,11 @@ runs:
       shell: bash
       env:
         BUILD_SUBFOLDER: ${{ inputs.subfolder }}
-        REPO_NAME: ${{ github.repository }}
 
       run: |
         pip install git+https://github.com/genropy/genropy.git@develop#subdirectory=gnrpy
         gnr app initgenropy --skip-existing
-        gnr core bagedit $HOME/.gnr/environment.xml add projects.build path=$GITHUB_WORKSPACE/${REPO_NAME##*/}$BUILD_SUBFOLDER
+        gnr core bagedit $HOME/.gnr/environment.xml add projects.build path=$GITHUB_WORKSPACE$BUILD_SUBFOLDER
 
     - name: Log in to Container Registry
       shell: bash
