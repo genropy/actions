@@ -61,6 +61,14 @@ runs:
         pip install git+https://github.com/genropy/genropy.git@develop#subdirectory=gnrpy
         gnr app initgenropy --skip-existing
         gnr core bagedit $HOME/.gnr/environment.xml add projects.build path=$GITHUB_WORKSPACE$BUILD_SUBFOLDER
+        echo "--- DEBUG ---"
+        echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+        echo "BUILD_SUBFOLDER=$BUILD_SUBFOLDER"
+        echo "resolved project path: $GITHUB_WORKSPACE$BUILD_SUBFOLDER"
+        ls -la "$GITHUB_WORKSPACE$BUILD_SUBFOLDER"
+        echo "--- environment.xml ---"
+        cat $HOME/.gnr/environment.xml
+        echo "-------------"
 
     - name: Log in to Container Registry
       shell: bash
