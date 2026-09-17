@@ -22,7 +22,11 @@ inputs:
     required: false
     default: ''
   org_clone_token:
-    description: 'Token for cloning private repositories'
+    description: 'Token for cloning private repositories from github.com'
+    required: false
+    default: ''
+  genro_clone_token:
+    description: 'Token for cloning private repositories from hub.genro.com'
     required: false
     default: ''
   github_token:
@@ -60,16 +64,7 @@ runs:
       run: |
         pip install git+https://github.com/genropy/genropy.git@develop#subdirectory=gnrpy
         gnr app initgenropy --skip-existing
-        PROJECTS_HOME="$(dirname "$GITHUB_WORKSPACE")$BUILD_SUBFOLDER"
-        gnr core bagedit $HOME/.gnr/environment.xml add projects.build path=$PROJECTS_HOME
-        echo "--- DEBUG ---"
-        echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
-        echo "BUILD_SUBFOLDER=$BUILD_SUBFOLDER"
-        echo "resolved projects.build path: $PROJECTS_HOME"
-        ls -la "$PROJECTS_HOME"
-        echo "--- environment.xml ---"
-        cat $HOME/.gnr/environment.xml
-        echo "-------------"
+        gnr core bagedit $HOME/.gnr/environment.xml add projects.build path=$(dirname "$GITHUB_WORKSPACE")$BUILD_SUBFOLDER
 
     - name: Log in to Container Registry
       shell: bash
@@ -96,6 +91,7 @@ runs:
       shell: bash
       env:
         ORG_CLONE_TOKEN: ${{ inputs.org_clone_token }}
+        GENRO_CLONE_TOKEN: ${{ inputs.genro_clone_token }}
       run: |
         set -euo pipefail
         export GNR_LOGLEVEL=debug
@@ -106,11 +102,19 @@ runs:
         [url "https://github.com/"]
           insteadOf = git@github.com:
           insteadOf = ssh://git@github.com/
+        [url "https://hub.genro.com/"]
+          insteadOf = git@hub.genro.com:
+          insteadOf = ssh://git@hub.genro.com/
         EOF
         if [ -n "${ORG_CLONE_TOKEN:-}" ]; then
           git config --global --unset-all http.https://github.com/.extraheader || true
           git config --global http.https://github.com/.extraheader \
           "AUTHORIZATION: basic $(printf "x-access-token:%s" "$ORG_CLONE_TOKEN" | base64 -w0)"
+        fi
+        if [ -n "${GENRO_CLONE_TOKEN:-}" ]; then
+          git config --global --unset-all http.https://hub.genro.com/.extraheader || true
+          git config --global http.https://hub.genro.com/.extraheader \
+          "AUTHORIZATION: basic $(printf "%s:" "$GENRO_CLONE_TOKEN" | base64 -w0)"
         fi
         gnr app dockerize --bleeding -p -r ${{ inputs.registry }} -n ${{ inputs.image_name }} -u ${{ github.repository_owner}} -t $IMAGE_TAG ${{ inputs.instance_name }}
 
