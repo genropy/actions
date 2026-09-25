@@ -21,7 +21,7 @@ inputs:
     description: "Repository subfolder for projects"
     required: false
     default: ''
-  org_clone_token:
+  github_clone_token:
     description: 'Token for cloning private repositories from github.com'
     required: false
     default: ''
@@ -29,7 +29,7 @@ inputs:
     description: 'Token for cloning private repositories from hub.genro.com'
     required: false
     default: ''
-  github_token:
+  registry_token:
     description: 'GitHub token for registry authentication'
     required: true
   deployer_urls:
@@ -69,7 +69,7 @@ runs:
     - name: Log in to Container Registry
       shell: bash
       run: |
-        echo "${{ inputs.github_token }}" | docker login ${{ inputs.registry }} \
+        echo "${{ inputs.registry_token }}" | docker login ${{ inputs.registry }} \
         -u "${{ github.actor }}" --password-stdin
 
     - name: Compute image tag
@@ -90,7 +90,7 @@ runs:
     - name: Configure git auth header and run builder
       shell: bash
       env:
-        ORG_CLONE_TOKEN: ${{ inputs.org_clone_token }}
+        GITHUB_CLONE_TOKEN: ${{ inputs.github_clone_token }}
         GENRO_CLONE_TOKEN: ${{ inputs.genro_clone_token }}
       run: |
         set -euo pipefail
@@ -106,10 +106,10 @@ runs:
           insteadOf = git@hub.genro.com:
           insteadOf = ssh://git@hub.genro.com/
         EOF
-        if [ -n "${ORG_CLONE_TOKEN:-}" ]; then
+        if [ -n "${GITHUB_CLONE_TOKEN:-}" ]; then
           git config --global --unset-all http.https://github.com/.extraheader || true
           git config --global http.https://github.com/.extraheader \
-          "AUTHORIZATION: basic $(printf "x-access-token:%s" "$ORG_CLONE_TOKEN" | base64 -w0)"
+          "AUTHORIZATION: basic $(printf "x-access-token:%s" "$GITHUB_CLONE_TOKEN" | base64 -w0)"
         fi
         if [ -n "${GENRO_CLONE_TOKEN:-}" ]; then
           git config --global --unset-all http.https://hub.genro.com/.extraheader || true
