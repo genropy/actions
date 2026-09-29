@@ -128,7 +128,7 @@ runs:
           echo "GENROPY_DEPLOYER_URLS not set, skipping deployer notification"
           exit 0
         fi
-        IMAGE="ghcr.io/${{ github.repository_owner }}/${{ inputs.image_name }}:$IMAGE_TAG"
+        IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image_name }}:$IMAGE_TAG"
         IFS=',' read -ra URLS <<< "$DEPLOYER_URLS"
         for URL in "${URLS[@]}"; do
           URL="$(echo "$URL" | xargs)"
