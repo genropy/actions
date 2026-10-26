@@ -14,9 +14,9 @@ inputs:
     required: false
     default: 'hub.genro.com'
   push_registry:
-    description: 'Registry endpoint used for login/push (e.g. in-cluster service). Defaults to `registry`. Image is still referenced as `registry` for deployers.'
+    description: 'Registry endpoint used for login/push (e.g. in-cluster service). Defaults to the in-cluster Forgejo service; pass an empty string to fall back to `registry`. Image is still referenced as `registry` for deployers.'
     required: false
-    default: ''
+    default: 'forgejo.forgejo.svc.cluster.local:3000'
   python_version:
     description: 'Python version to use'
     required: false
@@ -99,6 +99,7 @@ runs:
         echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
 
     - name: Configure git auth header and run builder
+      id: dockerize
       shell: bash
       env:
         GITHUB_CLONE_TOKEN: ${{ inputs.github_clone_token }}
@@ -130,6 +131,7 @@ runs:
         gnr app dockerize --bleeding -p -r "$PUSH_REGISTRY" -n ${{ inputs.image_name }} -u ${{ github.repository_owner}} -t $IMAGE_TAG ${{ inputs.instance_name }}
 
     - name: Notify Genropy deployers
+      if: ${{ success() && steps.dockerize.outcome == 'success' }}
       shell: bash
       env:
         DEPLOYER_URLS: ${{ inputs.deployer_urls }}
