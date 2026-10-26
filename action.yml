@@ -13,6 +13,10 @@ inputs:
     description: 'Container registry URL'
     required: false
     default: 'hub.genro.com'
+  push_registry:
+    description: 'Registry endpoint used for login/push (e.g. in-cluster service). Defaults to `registry`. Image is still referenced as `registry` for deployers.'
+    required: false
+    default: ''
   python_version:
     description: 'Python version to use'
     required: false
@@ -65,13 +69,20 @@ runs:
         pip install git+https://github.com/genropy/genropy.git@develop#subdirectory=gnrpy
         gnr app initgenropy --skip-existing
         gnr core bagedit $HOME/.gnr/environment.xml add projects.build path=$(dirname "$GITHUB_WORKSPACE")$BUILD_SUBFOLDER
-
+        
+    - name: Resolve push registry
+      shell: bash
+      run: |
+        PUSH_REGISTRY="${{ inputs.push_registry }}"
+        [[ -z "$PUSH_REGISTRY" ]] && PUSH_REGISTRY="${{ inputs.registry }}"
+        echo "PUSH_REGISTRY=$PUSH_REGISTRY" >> "$GITHUB_ENV"
+        
     - name: Log in to Container Registry
       shell: bash
       run: |
-        echo "${{ inputs.registry_token }}" | docker login ${{ inputs.registry }} \
+        echo "${{ inputs.registry_token }}" | docker login "$PUSH_REGISTRY" \
         -u "${{ github.actor }}" --password-stdin
-
+        
     - name: Compute image tag
       shell: bash
       run: |
@@ -116,7 +127,7 @@ runs:
           git config --global http.https://hub.genro.com/.extraheader \
           "AUTHORIZATION: basic $(printf "%s:" "$GENRO_CLONE_TOKEN" | base64 -w0)"
         fi
-        gnr app dockerize --bleeding -p -r ${{ inputs.registry }} -n ${{ inputs.image_name }} -u ${{ github.repository_owner}} -t $IMAGE_TAG ${{ inputs.instance_name }}
+        gnr app dockerize --bleeding -p -r "$PUSH_REGISTRY" -n ${{ inputs.image_name }} -u ${{ github.repository_owner}} -t $IMAGE_TAG ${{ inputs.instance_name }}
 
     - name: Notify Genropy deployers
       shell: bash
