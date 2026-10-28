@@ -137,19 +137,8 @@ runs:
         DEPLOYER_URLS: ${{ inputs.deployer_urls }}
         DEPLOYER_TOKEN: ${{ inputs.deployer_token }}
       run: |
-        if [ -z "${DEPLOYER_URLS:-}" ]; then
-          echo "GENROPY_DEPLOYER_URLS not set, skipping deployer notification"
-          exit 0
-        fi
-        IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image_name }}:$IMAGE_TAG"
-        IFS=',' read -ra URLS <<< "$DEPLOYER_URLS"
-        for URL in "${URLS[@]}"; do
-          URL="$(echo "$URL" | xargs)"
-          echo "Notifying deployer at $URL with image $IMAGE"
-          curl -fsSL -X POST "$URL" \
-            -H "Content-Type: application/json" \
-            --data "$(jq -n --arg token "$DEPLOYER_TOKEN" --arg image "$IMAGE" '{token: $token, image: $image}')"
-        done
+        export IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image_name }}:$IMAGE_TAG"
+        bash "${{ github.action_path }}/notify/notify.sh"
 
 branding:
   icon: 'package'

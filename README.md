@@ -78,6 +78,26 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+## Notify Genropy Deployers (standalone)
+
+The deployer notification is also available as a standalone action, so other
+workflows can notify deployers without using the full build action:
+
+```yaml
+    steps:
+      - uses: genropy/actions/notify-deployer@main
+        with:
+          image: hub.genro.com/my-org/my-application:latest
+          deployer_urls: ${{ secrets.GENROPY_DEPLOYER_URLS }}
+          deployer_token: ${{ secrets.GENROPY_DEPLOYER_TOKEN }}
+```
+
+Inputs:
+
+- `image` (required) - Full image reference sent to the deployers
+- `deployer_urls` - Comma-separated deployer URLs; if empty, the step is skipped
+- `deployer_token` - Token sent to the deployers for authentication
+
 ## Requirements
 
 Your repository needs:
