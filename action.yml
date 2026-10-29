@@ -21,6 +21,10 @@ inputs:
     description: 'Python version to use'
     required: false
     default: '3.11'
+  genropy_branch:
+    description: 'Branch (or tag/commit) of the genropy repository to install'
+    required: false
+    default: 'master'
   subfolder:
     description: "Repository subfolder for projects"
     required: false
@@ -64,9 +68,10 @@ runs:
       shell: bash
       env:
         BUILD_SUBFOLDER: ${{ inputs.subfolder }}
+        GENROPY_BRANCH: ${{ inputs.genropy_branch }}
 
       run: |
-        pip install git+https://github.com/genropy/genropy.git@develop#subdirectory=gnrpy
+        pip install "git+https://github.com/genropy/genropy.git@${GENROPY_BRANCH:-master}#subdirectory=gnrpy"
         gnr app initgenropy --skip-existing
         gnr core bagedit $HOME/.gnr/environment.xml add projects.build path=$(dirname "$GITHUB_WORKSPACE")$BUILD_SUBFOLDER
         
