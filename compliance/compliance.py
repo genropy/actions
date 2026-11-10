@@ -8,6 +8,18 @@ It reads the checkout as it is: point it at the branch that runs in production.
 A finding is a place to look at, not a verdict. Exit code: 2 with HIGH findings,
 1 with MEDIUM ones, 0 otherwise. --fail-on HIGH ignores MEDIUM findings in the
 exit code, --fail-on NONE always exits 0 (report only).
+
+A finding that is intended (e.g. a deliberate override of login_createNewUser)
+is declared with a marker, on the reported line or alone on the line above it:
+
+    def login_createNewUser(self, **kwargs):  # compliance: ok LOGIN-NEWUSER <reason>
+
+    # compliance: ok ENV-KEY <reason>
+    sede_id = self.db.currentEnv['sede_id']
+
+The marker drops only findings of the RULE it names, and only with a reason.
+For a function the reported line is the def line: put the marker after it.
+In .js files `//` works as well as `#`.
 """
 
 import argparse
@@ -31,6 +43,7 @@ ENV_NAMES = {'currentEnv', 'currentenv'}
 FRAMEWORK_KEYS = {'storename', 'dbbranch', 'workdate', 'locale', 'default_language', 'current_language', 'maxdate',
                   'mindate', 'user', 'userTags', 'pagename', 'mainpackage', 'external_host', 'currentDomain',
                   'user_id', 'user_group_code', 'language', 'login_date'}
+MARKER = re.compile(r"(?:#|//)\s*compliance:\s*ok\s+([A-Z][A-Z0-9-]*)\s+\S")
 SET_ROOTENV = re.compile(r"\b(SET|PUT)\s+(\.[A-Za-z_]|gnr\.rootenv)")
 JS_RULES = [
     ('ROOTENV-CLIENT-WRITE', 'HIGH', re.compile(r"setData\(\s*['\"]gnr\.rootenv|\bSET\s+gnr\.rootenv"),
@@ -75,11 +88,29 @@ class Project:
         self.env_writes = set()
         self.hook_keys = defaultdict(set)       # 'always' / 'sometimes' -> keys
         self.form_condition_keys = set()
+        self.form_value_keys = set()            # keys edited by a field of the login form: the browser sends them
         self.declared_env_keys = set()          # keys a page declares with dbenv=True
         self.partitioned = []
+        self.suppressed = []
+        self._lines = {}
 
     def add(self, level, rule, path, line, message):
-        self.findings.append(Finding(level, rule, os.path.relpath(path, self.root), line, message))
+        finding = Finding(level, rule, os.path.relpath(path, self.root), line, message)
+        (self.suppressed if self.is_marked(path, line, rule) else self.findings).append(finding)
+
+    def is_marked(self, path, line, rule):
+        """True when a `# compliance: ok <rule> <reason>` marker ends the line or stands alone above it."""
+        if path not in self._lines:
+            try:
+                with open(path, encoding='utf-8', errors='replace') as f:
+                    self._lines[path] = f.read().splitlines()
+            except OSError:
+                self._lines[path] = []
+        lines = self._lines[path]
+        if 0 < line <= len(lines) and rule in MARKER.findall(lines[line - 1]):
+            return True
+        above = lines[line - 2].strip() if 1 < line <= len(lines) + 1 else ''
+        return above.startswith(('#', '//')) and rule in MARKER.findall(above)
 
     def scan(self):
         for dirpath, dirnames, filenames in os.walk(self.root):
@@ -211,6 +242,8 @@ class Project:
                 self.add('LOW', 'LOGIN-DATA-NONE', path, node.lineno,
                          "data('.%s') without a value no longer leaves the key in the rootenv" % rootenv_key(first))
             value = const(kwargs.get('value'))
+            if value and value[:1] in ('^', '=') and rootenv_key(value):
+                self.form_value_keys.add(rootenv_key(value))
             if value and value[:1] == '^' and value[1:2] == '.' and not rootenv_key(value):
                 self.add('MEDIUM', 'LOGIN-FIELD-PATH', path, node.lineno,
                          "the field value %s is not a direct rootenv key: the login does not keep it" % value)
@@ -237,7 +270,7 @@ class Project:
                 continue
             where = '%i read%s with [...]' % (len(places), '' if len(places) == 1 else 's')
             sometimes = key in self.hook_keys['sometimes']
-            if key in self.form_condition_keys:
+            if key in self.form_condition_keys and key not in self.form_value_keys:
                 level = 'HIGH'
                 why = '%s and the login form only reads it in a condition: the browser no longer sends it ' \
                       'back (#1828)' % ('a login hook sets it only on some paths' if sometimes else 'no login hook sets it')
@@ -261,9 +294,10 @@ def main():
                         help='lowest level that makes the exit code non-zero (default MEDIUM)')
     args = parser.parse_args()
     shown = LEVELS[:LEVELS.index(args.min) + 1]
-    report, worst = {}, 0
+    report, suppressed, worst = {}, {}, 0
     for root in args.projects:
-        findings = Project(os.path.abspath(root)).scan().findings
+        project = Project(os.path.abspath(root)).scan()
+        findings, suppressed[root] = project.findings, len(project.suppressed)
         findings.sort(key=lambda f: (LEVELS.index(f['level']), f['rule'], f['file'], f['line']))
         report[root] = [f for f in findings if f['level'] in shown]
         levels = {f['level'] for f in findings}
@@ -275,6 +309,8 @@ def main():
         return worst
     for root, findings in report.items():
         counts = ', '.join('%i %s' % (sum(f['level'] == lv for f in findings), lv) for lv in shown)
+        if suppressed[root]:
+            counts += ', %i marked ok' % suppressed[root]
         sys.stdout.write('\n== %s: %s\n' % (root, counts))
         for f in findings:
             sys.stdout.write('%-6s %-22s %s:%i\n       %s\n' % (f['level'], f['rule'], f['file'], f['line'], f['message']))
