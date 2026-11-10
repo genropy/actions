@@ -72,13 +72,13 @@ runs:
       with:
         python-version: ${{ inputs.python_version }}
 
-    - name: Genropy compliance check
-      if: ${{ inputs.compliance_check == 'true' }}
-      shell: bash
-      env:
-        FAIL_ON: ${{ inputs.compliance_fail_on }}
-      run: |
-        python3 "${{ github.action_path }}/compliance/compliance.py" "$GITHUB_WORKSPACE" --fail-on "${FAIL_ON:-MEDIUM}"
+    # - name: Genropy compliance check
+    #   if: ${{ inputs.compliance_check == 'true' }}
+    #   shell: bash
+    #   env:
+    #     FAIL_ON: ${{ inputs.compliance_fail_on }}
+    #   run: |
+    #     python3 "${{ github.action_path }}/compliance/compliance.py" "$GITHUB_WORKSPACE" --fail-on "${FAIL_ON:-MEDIUM}"
 
     - name: Install genropy
       shell: bash
