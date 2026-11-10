@@ -19,7 +19,9 @@ is declared with a marker, on the reported line or alone on the line above it:
 
 The marker drops only findings of the RULE it names, and only with a reason.
 For a function the reported line is the def line: put the marker after it.
-In .js files `//` works as well as `#`.
+An ENV-KEY finding is marked when any of the reads of its key carries the marker.
+In .js files `//` works as well as `#`. Marked findings are listed after the
+others with their reason (under "marked" with --json) and never fail the exit code.
 """
 
 import argparse
@@ -43,7 +45,7 @@ ENV_NAMES = {'currentEnv', 'currentenv'}
 FRAMEWORK_KEYS = {'storename', 'dbbranch', 'workdate', 'locale', 'default_language', 'current_language', 'maxdate',
                   'mindate', 'user', 'userTags', 'pagename', 'mainpackage', 'external_host', 'currentDomain',
                   'user_id', 'user_group_code', 'language', 'login_date'}
-MARKER = re.compile(r"(?:#|//)\s*compliance:\s*ok\s+([A-Z][A-Z0-9-]*)\s+\S")
+MARKER = re.compile(r"(?:#|//)\s*compliance:\s*ok\s+([A-Z][A-Z0-9-]*)\s+(\S.*?)\s*$")
 SET_ROOTENV = re.compile(r"\b(SET|PUT)\s+(\.[A-Za-z_]|gnr\.rootenv)")
 JS_RULES = [
     ('ROOTENV-CLIENT-WRITE', 'HIGH', re.compile(r"setData\(\s*['\"]gnr\.rootenv|\bSET\s+gnr\.rootenv"),
@@ -91,15 +93,23 @@ class Project:
         self.form_value_keys = set()            # keys edited by a field of the login form: the browser sends them
         self.declared_env_keys = set()          # keys a page declares with dbenv=True
         self.partitioned = []
-        self.suppressed = []
+        self.marked = []
         self._lines = {}
 
-    def add(self, level, rule, path, line, message):
+    def add(self, level, rule, path, line, message, places=None):
+        """Record a finding on path:line, or among the marked ones when a marker on one of `places`
+        (default: path:line) declares it intended."""
         finding = Finding(level, rule, os.path.relpath(path, self.root), line, message)
-        (self.suppressed if self.is_marked(path, line, rule) else self.findings).append(finding)
+        for place in places or [(path, line)]:
+            reason = self.marker_reason(*place, rule)
+            if reason:
+                finding['reason'] = reason
+                self.marked.append(finding)
+                return
+        self.findings.append(finding)
 
-    def is_marked(self, path, line, rule):
-        """True when a `# compliance: ok <rule> <reason>` marker ends the line or stands alone above it."""
+    def marker_reason(self, path, line, rule):
+        """The reason of a `# compliance: ok <rule> <reason>` marker ending the line or alone above it, or None."""
         if path not in self._lines:
             try:
                 with open(path, encoding='utf-8', errors='replace') as f:
@@ -107,15 +117,20 @@ class Project:
             except OSError:
                 self._lines[path] = []
         lines = self._lines[path]
-        if 0 < line <= len(lines) and rule in MARKER.findall(lines[line - 1]):
-            return True
         above = lines[line - 2].strip() if 1 < line <= len(lines) + 1 else ''
-        return above.startswith(('#', '//')) and rule in MARKER.findall(above)
+        candidates = [lines[line - 1] if 0 < line <= len(lines) else '']
+        if above.startswith(('#', '//')):
+            candidates.append(above)
+        for text in candidates:
+            for marked_rule, reason in MARKER.findall(text):
+                if marked_rule == rule:
+                    return reason
+        return None
 
     def scan(self):
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-            for name in filenames:
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+            for name in sorted(filenames):
                 path = os.path.join(dirpath, name)
                 if name.endswith('.py'):
                     self.scan_py(path)
@@ -274,15 +289,18 @@ class Project:
                 level = 'HIGH'
                 why = '%s and the login form only reads it in a condition: the browser no longer sends it ' \
                       'back (#1828)' % ('a login hook sets it only on some paths' if sometimes else 'no login hook sets it')
+            elif key in self.form_value_keys:
+                level, why = 'LOW', 'a field of the login form edits it: present only when the browser sends the field'
             elif sometimes:
                 level, why = 'MEDIUM', 'a login hook sets it only on some paths'
             elif key in self.declared_env_keys or key.startswith(('current_', 'allowed_')):
                 level, why = 'LOW', 'expected from a partition, a preference or a serverpath declared with dbenv'
             else:
                 level, why = 'MEDIUM', 'no login hook sets it'
-            path, line = places[0]
+            path, line = min(places)
             self.add(level, 'ENV-KEY', path, line,
-                     "currentEnv['%s']: %s; %s. KeyError when missing: set it always or use .get()" % (key, where, why))
+                     "currentEnv['%s']: %s; %s. KeyError when missing: set it always or use .get()" % (key, where, why),
+                     places=sorted(places))
 
 
 def main():
@@ -294,26 +312,34 @@ def main():
                         help='lowest level that makes the exit code non-zero (default MEDIUM)')
     args = parser.parse_args()
     shown = LEVELS[:LEVELS.index(args.min) + 1]
-    report, suppressed, worst = {}, {}, 0
+
+    def order(f):
+        return LEVELS.index(f['level']), f['rule'], f['file'], f['line']
+
+    report, worst = {}, 0
     for root in args.projects:
         project = Project(os.path.abspath(root)).scan()
-        findings, suppressed[root] = project.findings, len(project.suppressed)
-        findings.sort(key=lambda f: (LEVELS.index(f['level']), f['rule'], f['file'], f['line']))
-        report[root] = [f for f in findings if f['level'] in shown]
-        levels = {f['level'] for f in findings}
+        report[root] = dict(findings=sorted((f for f in project.findings if f['level'] in shown), key=order),
+                            marked=sorted(project.marked, key=order))
+        levels = {f['level'] for f in project.findings}
         worst = max(worst, 2 if 'HIGH' in levels else 1 if 'MEDIUM' in levels else 0)
     if args.fail_on == 'NONE' or (args.fail_on == 'HIGH' and worst < 2):
         worst = 0
     if args.json:
         sys.stdout.write(json.dumps(report, indent=1) + '\n')
         return worst
-    for root, findings in report.items():
+    for root, result in report.items():
+        findings, marked = result['findings'], result['marked']
         counts = ', '.join('%i %s' % (sum(f['level'] == lv for f in findings), lv) for lv in shown)
-        if suppressed[root]:
-            counts += ', %i marked ok' % suppressed[root]
+        if marked:
+            counts += ', %i marked ok' % len(marked)
         sys.stdout.write('\n== %s: %s\n' % (root, counts))
         for f in findings:
             sys.stdout.write('%-6s %-22s %s:%i\n       %s\n' % (f['level'], f['rule'], f['file'], f['line'], f['message']))
+        if marked:
+            sys.stdout.write('-- marked ok\n')
+        for f in marked:
+            sys.stdout.write('%-6s %-22s %s:%i\n       ok: %s\n' % (f['level'], f['rule'], f['file'], f['line'], f['reason']))
     return worst
 
 

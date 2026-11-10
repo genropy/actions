@@ -88,8 +88,11 @@ sede_id = self.db.currentEnv['sede_id']
 
 The marker drops only the findings of the rule it names, and only when a reason
 follows the rule. For a function the reported line is the `def` line (its
-decorators sit above it), so use the trailing form there. In `.js` files `//`
-works as well as `#`. Marked findings are counted as `marked ok` in the report.
+decorators sit above it), so use the trailing form there. An `ENV-KEY` finding
+is marked when any read of its key carries the marker. In `.js` files `//`
+works as well as `#`. Marked findings never fail the step: they are listed after
+the others with their reason, and under `marked` with `--json`, whose output is
+`{"<project>": {"findings": [...], "marked": [...]}}`.
 
 ### Image Tag
 
