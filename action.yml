@@ -52,6 +52,14 @@ inputs:
     description: 'Override the computed image tag (takes precedence over branch-based tag logic)'
     required: false
     default: ''
+  compliance_check:
+    description: 'Run the genropy compliance check on the project before building (true/false)'
+    required: false
+    default: 'true'
+  compliance_fail_on:
+    description: 'Lowest finding level that fails the compliance check: HIGH, MEDIUM or NONE (report only)'
+    required: false
+    default: 'MEDIUM'
 
 runs:
   using: 'composite'
@@ -63,6 +71,14 @@ runs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python_version }}
+
+    - name: Genropy compliance check
+      if: ${{ inputs.compliance_check == 'true' }}
+      shell: bash
+      env:
+        FAIL_ON: ${{ inputs.compliance_fail_on }}
+      run: |
+        python3 "${{ github.action_path }}/compliance/compliance.py" "$GITHUB_WORKSPACE" --fail-on "${FAIL_ON:-MEDIUM}"
 
     - name: Install genropy
       shell: bash

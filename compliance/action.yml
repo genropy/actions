@@ -1,0 +1,34 @@
+name: 'Genropy Compliance Check'
+description: 'Static check of a Genropy project for code that can break with the newer genropy'
+author: 'genropy'
+
+inputs:
+  path:
+    description: 'Project directory to check (defaults to the workspace, i.e. the checked-out repository)'
+    required: false
+    default: ''
+  fail_on:
+    description: 'Lowest finding level that fails the step: HIGH, MEDIUM or NONE (report only)'
+    required: false
+    default: 'MEDIUM'
+  min_level:
+    description: 'Lowest finding level to show in the report: HIGH, MEDIUM, LOW or INFO'
+    required: false
+    default: 'LOW'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Genropy compliance check
+      shell: bash
+      env:
+        PROJECT_PATH: ${{ inputs.path }}
+        FAIL_ON: ${{ inputs.fail_on }}
+        MIN_LEVEL: ${{ inputs.min_level }}
+      run: |
+        python3 "${{ github.action_path }}/compliance.py" "${PROJECT_PATH:-$GITHUB_WORKSPACE}" \
+          --fail-on "${FAIL_ON:-MEDIUM}" --min "${MIN_LEVEL:-LOW}"
+
+branding:
+  icon: 'check-circle'
+  color: 'blue'

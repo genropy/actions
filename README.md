@@ -57,6 +57,21 @@ The image is published as `<registry>/<repository owner>/<image_name>:<tag>`.
 - `image_tag` - Override the computed image tag (default: empty, see below)
 - `deployer_urls` - Comma-separated deployer URLs to notify after a successful build; if empty, no notification is sent
 - `deployer_token` - Token sent to the deployers for authentication
+- `compliance_check` - Run the compliance check before building (default: `true`)
+- `compliance_fail_on` - Lowest finding level that fails the build: `HIGH`, `MEDIUM` or `NONE` for report only (default: `MEDIUM`)
+
+### Compliance Check
+
+Before installing genropy and building, the action runs `compliance/compliance.py`
+on the checked-out repository. It statically looks for code that can break with
+the newer genropy (custom login, client writes to the rootenv, tinyMCE, unset
+`currentEnv` keys, ...) and prints each finding with file and line.
+The build stops if there are findings at or above `compliance_fail_on`.
+You can also run it locally:
+
+```bash
+python3 compliance/compliance.py /path/to/project [--min LOW] [--fail-on MEDIUM] [--json]
+```
 
 ### Image Tag
 
@@ -122,6 +137,27 @@ Inputs:
 - `deployer_token` - Token sent to the deployers for authentication
 
 Each deployer receives a `POST` with JSON body `{"token": "...", "image": "..."}`.
+
+## Compliance Check (standalone)
+
+The compliance check is also available as a standalone action, e.g. to run it on
+pull requests without building. The main action runs it automatically before the build.
+
+```yaml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: genropy/actions/compliance@main
+        with:
+          fail_on: MEDIUM
+```
+
+Inputs:
+
+- `path` - Project directory to check (default: the workspace, i.e. the checked-out repository)
+- `fail_on` - Lowest finding level that fails the step: `HIGH`, `MEDIUM` or `NONE` for report only (default: `MEDIUM`)
+- `min_level` - Lowest finding level shown in the report: `HIGH`, `MEDIUM`, `LOW` or `INFO` (default: `LOW`)
+
+It needs `python3` 3.9 or newer, which GitHub-hosted Ubuntu runners already have.
 
 ## Requirements
 
