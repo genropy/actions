@@ -79,6 +79,27 @@ You can also run it locally:
 python3 compliance/compliance.py /path/to/project [--min LOW] [--fail-on MEDIUM] [--json]
 ```
 
+A static check cannot tell a deliberate choice from a mistake. When a finding is
+intended (e.g. an override of `login_createNewUser` that must not depend on the
+`new_user` preference), mark it with `# compliance: ok <RULE> <reason>`, either at
+the end of the reported line or alone on the line immediately above it:
+
+```python
+def login_createNewUser(self, **kwargs):  # compliance: ok LOGIN-NEWUSER registration ignores the new_user preference
+    ...
+
+# compliance: ok ENV-KEY always set by the instance's own onAuthenticating
+sede_id = self.db.currentEnv['sede_id']
+```
+
+The marker drops only the findings of the rule it names, and only when a reason
+follows the rule. For a function the reported line is the `def` line (its
+decorators sit above it), so use the trailing form there. An `ENV-KEY` finding
+is marked when any read of its key carries the marker. In `.js` files `//`
+works as well as `#`. Marked findings never fail the step: they are listed after
+the others with their reason, and under `marked` with `--json`, whose output is
+`{"<project>": {"findings": [...], "marked": [...]}}`.
+
 ### Image Tag
 
 Unless `image_tag` is set, the tag is computed from the branch that triggered the workflow:

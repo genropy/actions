@@ -8,6 +8,20 @@ It reads the checkout as it is: point it at the branch that runs in production.
 A finding is a place to look at, not a verdict. Exit code: 2 with HIGH findings,
 1 with MEDIUM ones, 0 otherwise. --fail-on HIGH ignores MEDIUM findings in the
 exit code, --fail-on NONE always exits 0 (report only).
+
+A finding that is intended (e.g. a deliberate override of login_createNewUser)
+is declared with a marker, on the reported line or alone on the line above it:
+
+    def login_createNewUser(self, **kwargs):  # compliance: ok LOGIN-NEWUSER <reason>
+
+    # compliance: ok ENV-KEY <reason>
+    sede_id = self.db.currentEnv['sede_id']
+
+The marker drops only findings of the RULE it names, and only with a reason.
+For a function the reported line is the def line: put the marker after it.
+An ENV-KEY finding is marked when any of the reads of its key carries the marker.
+In .js files `//` works as well as `#`. Marked findings are listed after the
+others with their reason (under "marked" with --json) and never fail the exit code.
 """
 
 import argparse
@@ -31,6 +45,7 @@ ENV_NAMES = {'currentEnv', 'currentenv'}
 FRAMEWORK_KEYS = {'storename', 'dbbranch', 'workdate', 'locale', 'default_language', 'current_language', 'maxdate',
                   'mindate', 'user', 'userTags', 'pagename', 'mainpackage', 'external_host', 'currentDomain',
                   'user_id', 'user_group_code', 'language', 'login_date'}
+MARKER = re.compile(r"(?:#|//)\s*compliance:\s*ok\s+([A-Z][A-Z0-9-]*)\s+(\S.*?)\s*$")
 SET_ROOTENV = re.compile(r"\b(SET|PUT)\s+(\.[A-Za-z_]|gnr\.rootenv)")
 JS_RULES = [
     ('ROOTENV-CLIENT-WRITE', 'HIGH', re.compile(r"setData\(\s*['\"]gnr\.rootenv|\bSET\s+gnr\.rootenv"),
@@ -75,16 +90,47 @@ class Project:
         self.env_writes = set()
         self.hook_keys = defaultdict(set)       # 'always' / 'sometimes' -> keys
         self.form_condition_keys = set()
+        self.form_value_keys = set()            # keys edited by a field of the login form: the browser sends them
         self.declared_env_keys = set()          # keys a page declares with dbenv=True
         self.partitioned = []
+        self.marked = []
+        self._lines = {}
 
-    def add(self, level, rule, path, line, message):
-        self.findings.append(Finding(level, rule, os.path.relpath(path, self.root), line, message))
+    def add(self, level, rule, path, line, message, places=None):
+        """Record a finding on path:line, or among the marked ones when a marker on one of `places`
+        (default: path:line) declares it intended."""
+        finding = Finding(level, rule, os.path.relpath(path, self.root), line, message)
+        for place in places or [(path, line)]:
+            reason = self.marker_reason(*place, rule)
+            if reason:
+                finding['reason'] = reason
+                self.marked.append(finding)
+                return
+        self.findings.append(finding)
+
+    def marker_reason(self, path, line, rule):
+        """The reason of a `# compliance: ok <rule> <reason>` marker ending the line or alone above it, or None."""
+        if path not in self._lines:
+            try:
+                with open(path, encoding='utf-8', errors='replace') as f:
+                    self._lines[path] = f.read().splitlines()
+            except OSError:
+                self._lines[path] = []
+        lines = self._lines[path]
+        above = lines[line - 2].strip() if 1 < line <= len(lines) + 1 else ''
+        candidates = [lines[line - 1] if 0 < line <= len(lines) else '']
+        if above.startswith(('#', '//')):
+            candidates.append(above)
+        for text in candidates:
+            for marked_rule, reason in MARKER.findall(text):
+                if marked_rule == rule:
+                    return reason
+        return None
 
     def scan(self):
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-            for name in filenames:
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+            for name in sorted(filenames):
                 path = os.path.join(dirpath, name)
                 if name.endswith('.py'):
                     self.scan_py(path)
@@ -211,6 +257,8 @@ class Project:
                 self.add('LOW', 'LOGIN-DATA-NONE', path, node.lineno,
                          "data('.%s') without a value no longer leaves the key in the rootenv" % rootenv_key(first))
             value = const(kwargs.get('value'))
+            if value and value[:1] in ('^', '=') and rootenv_key(value):
+                self.form_value_keys.add(rootenv_key(value))
             if value and value[:1] == '^' and value[1:2] == '.' and not rootenv_key(value):
                 self.add('MEDIUM', 'LOGIN-FIELD-PATH', path, node.lineno,
                          "the field value %s is not a direct rootenv key: the login does not keep it" % value)
@@ -237,19 +285,22 @@ class Project:
                 continue
             where = '%i read%s with [...]' % (len(places), '' if len(places) == 1 else 's')
             sometimes = key in self.hook_keys['sometimes']
-            if key in self.form_condition_keys:
+            if key in self.form_condition_keys and key not in self.form_value_keys:
                 level = 'HIGH'
                 why = '%s and the login form only reads it in a condition: the browser no longer sends it ' \
                       'back (#1828)' % ('a login hook sets it only on some paths' if sometimes else 'no login hook sets it')
+            elif key in self.form_value_keys:
+                level, why = 'LOW', 'a field of the login form edits it: present only when the browser sends the field'
             elif sometimes:
                 level, why = 'MEDIUM', 'a login hook sets it only on some paths'
             elif key in self.declared_env_keys or key.startswith(('current_', 'allowed_')):
                 level, why = 'LOW', 'expected from a partition, a preference or a serverpath declared with dbenv'
             else:
                 level, why = 'MEDIUM', 'no login hook sets it'
-            path, line = places[0]
+            path, line = min(places)
             self.add(level, 'ENV-KEY', path, line,
-                     "currentEnv['%s']: %s; %s. KeyError when missing: set it always or use .get()" % (key, where, why))
+                     "currentEnv['%s']: %s; %s. KeyError when missing: set it always or use .get()" % (key, where, why),
+                     places=sorted(places))
 
 
 def main():
@@ -261,23 +312,34 @@ def main():
                         help='lowest level that makes the exit code non-zero (default MEDIUM)')
     args = parser.parse_args()
     shown = LEVELS[:LEVELS.index(args.min) + 1]
+
+    def order(f):
+        return LEVELS.index(f['level']), f['rule'], f['file'], f['line']
+
     report, worst = {}, 0
     for root in args.projects:
-        findings = Project(os.path.abspath(root)).scan().findings
-        findings.sort(key=lambda f: (LEVELS.index(f['level']), f['rule'], f['file'], f['line']))
-        report[root] = [f for f in findings if f['level'] in shown]
-        levels = {f['level'] for f in findings}
+        project = Project(os.path.abspath(root)).scan()
+        report[root] = dict(findings=sorted((f for f in project.findings if f['level'] in shown), key=order),
+                            marked=sorted(project.marked, key=order))
+        levels = {f['level'] for f in project.findings}
         worst = max(worst, 2 if 'HIGH' in levels else 1 if 'MEDIUM' in levels else 0)
     if args.fail_on == 'NONE' or (args.fail_on == 'HIGH' and worst < 2):
         worst = 0
     if args.json:
         sys.stdout.write(json.dumps(report, indent=1) + '\n')
         return worst
-    for root, findings in report.items():
+    for root, result in report.items():
+        findings, marked = result['findings'], result['marked']
         counts = ', '.join('%i %s' % (sum(f['level'] == lv for f in findings), lv) for lv in shown)
+        if marked:
+            counts += ', %i marked ok' % len(marked)
         sys.stdout.write('\n== %s: %s\n' % (root, counts))
         for f in findings:
             sys.stdout.write('%-6s %-22s %s:%i\n       %s\n' % (f['level'], f['rule'], f['file'], f['line'], f['message']))
+        if marked:
+            sys.stdout.write('-- marked ok\n')
+        for f in marked:
+            sys.stdout.write('%-6s %-22s %s:%i\n       ok: %s\n' % (f['level'], f['rule'], f['file'], f['line'], f['reason']))
     return worst
 
 
