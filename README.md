@@ -2,6 +2,11 @@
 
 This repository contains Github actions related to Genropy projects.
 
+The main action builds the image with
+[genro-toolchain](https://github.com/genropy/genro-toolchain) (`gnr-dockerize`),
+a standalone replacement for `gnr app dockerize`: Genropy is not installed on
+the runner.
+
 Maintainer: Christopher R. Gabriel <cgabriel@softwell.it>
 
 ## Usage
@@ -50,7 +55,8 @@ The image is published as `<registry>/<repository owner>/<image_name>:<tag>`.
 - `registry` - Container registry URL used to reference the image (default: `hub.genro.com`)
 - `push_registry` - Registry endpoint used for login/push, e.g. an in-cluster service (default: `forgejo.forgejo.svc.cluster.local:3000`). Pass an empty string to push directly to `registry`. Deployers are always notified with the `registry` address.
 - `python_version` - Python version to use (default: `3.11`)
-- `genropy_branch` - Branch (or tag/commit) of [genropy](https://github.com/genropy/genropy) to install (default: `master`)
+- `toolchain_ref` - Branch, tag or commit of [genro-toolchain](https://github.com/genropy/genro-toolchain) to use (default: `main`)
+- `base_image` - Base image for the build, e.g. `ghcr.io/genropy/genropy:develop` (default: empty, i.e. `ghcr.io/genropy/genropy:latest`)
 - `subfolder` - Repository subfolder containing the projects (default: empty)
 - `github_clone_token` - Token for cloning private repositories from github.com (default: empty)
 - `genro_clone_token` - Token for cloning private repositories from hub.genro.com (default: empty)
@@ -62,7 +68,7 @@ The image is published as `<registry>/<repository owner>/<image_name>:<tag>`.
 
 ### Compliance Check
 
-Before installing genropy and building, the action runs `compliance/compliance.py`
+Before building, the action runs `compliance/compliance.py`
 on the checked-out repository. It statically looks for code that can break with
 the newer genropy (custom login, client writes to the rootenv, tinyMCE, unset
 `currentEnv` keys, ...) and prints each finding with file and line.
@@ -105,7 +111,8 @@ jobs:
           registry: hub.genro.com
           push_registry: forgejo.forgejo.svc.cluster.local:3000
           python_version: '3.12'
-          genropy_branch: develop
+          toolchain_ref: main
+          base_image: ghcr.io/genropy/genropy:develop
           subfolder: /projects
           image_tag: ''
           registry_token: ${{ secrets.REGISTRY_TOKEN }}
@@ -159,10 +166,21 @@ Inputs:
 
 It needs `python3` 3.9 or newer, which GitHub-hosted Ubuntu runners already have.
 
+### How the image is built
+
+- The instance is looked up by name in the checked-out repository
+  (`instances/<name>` or `*/instances/<name>`), or under `subfolder` when set.
+- The instance repository is taken from the checked-out commit (no extra clone).
+- The other repositories come from the instance `config/build.json`, which
+  **must be committed**: genro-toolchain cannot generate it. Without it the image
+  contains only the instance repository. Generate it once with
+  `gnr app dockerize --build-gen` and commit it.
+- Debian packages listed in `config/apt-dependencies.txt` are installed in the image.
+
 ## Requirements
 
 Your repository needs:
-- A valid genropy configuration for the instance
+- A valid genropy configuration for the instance, including a committed `config/build.json`
 - A registry token secret (e.g. `REGISTRY_TOKEN`) able to push to the container registry
 - Clone token secrets (e.g. `SOFTWELL_CI_BUILD_TOKEN`, `GENRO_CLONE_TOKEN`) if the project depends on private repositories
 

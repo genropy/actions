@@ -21,10 +21,14 @@ inputs:
     description: 'Python version to use'
     required: false
     default: '3.11'
-  genropy_branch:
-    description: 'Branch (or tag/commit) of the genropy repository to install'
+  toolchain_ref:
+    description: 'Branch, tag or commit of genro-toolchain (https://github.com/genropy/genro-toolchain) used to build the image'
     required: false
-    default: 'master'
+    default: 'main'
+  base_image:
+    description: 'Base image for the build, e.g. ghcr.io/genropy/genropy:develop (default: empty, the genro-toolchain default ghcr.io/genropy/genropy:latest)'
+    required: false
+    default: ''
   subfolder:
     description: "Repository subfolder for projects"
     required: false
@@ -80,17 +84,25 @@ runs:
     #   run: |
     #     python3 "${{ github.action_path }}/compliance/compliance.py" "$GITHUB_WORKSPACE" --fail-on "${FAIL_ON:-MEDIUM}"
 
-    - name: Install genropy
+    - name: Install genro-toolchain
       shell: bash
       env:
         BUILD_SUBFOLDER: ${{ inputs.subfolder }}
-        GENROPY_BRANCH: ${{ inputs.genropy_branch }}
-
+        TOOLCHAIN_REF: ${{ inputs.toolchain_ref }}
       run: |
-        pip install "git+https://github.com/genropy/genropy.git@${GENROPY_BRANCH:-master}#subdirectory=gnrpy"
-        gnr app initgenropy --skip-existing
-        gnr core bagedit $HOME/.gnr/environment.xml add projects.build path=$(dirname "$GITHUB_WORKSPACE")$BUILD_SUBFOLDER
-        
+        set -euo pipefail
+        pip install "git+https://github.com/genropy/genro-toolchain.git@${TOOLCHAIN_REF:-main}"
+        gnr-dockerize --version
+        if [[ -n "$BUILD_SUBFOLDER" ]]; then
+          # Same projects path the genropy-based action registered: genro-toolchain
+          # reads ~/.gnr/environment.xml to look up the instance by name.
+          mkdir -p "$HOME/.gnr"
+          cat > "$HOME/.gnr/environment.xml" <<EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <GenRoBag><projects><build path="$(dirname "$GITHUB_WORKSPACE")$BUILD_SUBFOLDER"/></projects></GenRoBag>
+        EOF
+        fi
+
     - name: Resolve push registry
       shell: bash
       run: |
@@ -125,9 +137,12 @@ runs:
       env:
         GITHUB_CLONE_TOKEN: ${{ inputs.github_clone_token }}
         GENRO_CLONE_TOKEN: ${{ inputs.genro_clone_token }}
+        IMAGE_NAME: ${{ inputs.image_name }}
+        INSTANCE_NAME: ${{ inputs.instance_name }}
+        REPO_OWNER: ${{ github.repository_owner }}
+        BASE_IMAGE: ${{ inputs.base_image }}
       run: |
         set -euo pipefail
-        export GNR_LOGLEVEL=debug
         export GIT_TERMINAL_PROMPT=0
         export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig_with_pat"
 
@@ -149,7 +164,12 @@ runs:
           git config --global http.https://hub.genro.com/.extraheader \
           "AUTHORIZATION: basic $(printf "%s:" "$GENRO_CLONE_TOKEN" | base64 -w0)"
         fi
-        gnr app dockerize --bleeding -p -r "$PUSH_REGISTRY" -n ${{ inputs.image_name }} -u ${{ github.repository_owner}} -t $IMAGE_TAG ${{ inputs.instance_name }}
+        EXTRA_ARGS=()
+        [[ -n "${BASE_IMAGE:-}" ]] && EXTRA_ARGS+=(--base-image "$BASE_IMAGE")
+        gnr-dockerize --push \
+          -r "$PUSH_REGISTRY" -u "$REPO_OWNER" -n "$IMAGE_NAME" -t "$IMAGE_TAG" \
+          --project-dir "$GITHUB_WORKSPACE" --progress plain --loglevel debug \
+          "${EXTRA_ARGS[@]}" "$INSTANCE_NAME"
 
     - name: Notify Genropy deployers
       if: ${{ success() && steps.dockerize.outcome == 'success' }}
